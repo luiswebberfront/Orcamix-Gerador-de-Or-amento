@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orçamix - Gerador de Orçamento Mensal</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .container { max-width: 700px; margin: 40px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 32px; }
+    h1 { text-align: center; color: #2d3a4b; }
+    form { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+    form input, form select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+    form button { padding: 8px 16px; background: #2d8cff; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+    form button:hover { background: #1a6ed8; }
+    .saldo { font-size: 1.3em; margin: 16px 0; }
+    .saldo.positivo { color: #2ecc71; }
+    .saldo.negativo { color: #e74c3c; }
+    .aviso { background: #e74c3c22; color: #e74c3c; padding: 8px; border-radius: 4px; margin-bottom: 16px; text-align: center; display: none; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    th, td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #f4f6f8; }
+    .remove-btn { color: #e74c3c; background: none; border: none; cursor: pointer; font-size: 1em; }
+    @media (max-width: 600px) { .container { padding: 10px; } form { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Orçamento Mensal</h1>
+    <div class="aviso" id="avisoOrcamento">Atenção: Você ultrapassou o orçamento definido!</div>
+    <form id="formTransacao">
+      <input type="text" id="descricao" placeholder="Descrição" required>
+      <input type="number" id="valor" placeholder="Valor" step="0.01" required>
+      <select id="tipo">
+        <option value="receita">Receita</option>
+        <option value="despesa">Despesa</option>
+      </select>
+      <input type="number" id="orcamento" placeholder="Orçamento mensal (opcional)">
+      <button type="submit">Adicionar</button>
+    </form>
+    <div class="saldo" id="saldo"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>Descrição</th>
+          <th>Tipo</th>
+          <th>Valor</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="listaTransacoes"></tbody>
+    </table>
+    <canvas id="grafico" height="100"></canvas>
+  </div>
+  <script>
+    let transacoes = [];
+    let orcamentoMensal = null;
+    const form = document.getElementById('formTransacao');
+    const listaTransacoes = document.getElementById('listaTransacoes');
+    const saldoDiv = document.getElementById('saldo');
+    const avisoOrcamento = document.getElementById('avisoOrcamento');
+    const orcamentoInput = document.getElementById('orcamento');
+    let grafico = null;
+
+    function atualizarTabela() {
+      listaTransacoes.innerHTML = '';
+      transacoes.forEach((t, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${t.descricao}</td>
+          <td>${t.tipo === 'receita' ? 'Receita' : 'Despesa'}</td>
+          <td>${t.tipo === 'despesa' ? '-' : ''}R$ ${parseFloat(t.valor).toFixed(2)}</td>
+          <td><button class="remove-btn" onclick="removerTransacao(${i})">✖</button></td>
+        `;
+        listaTransacoes.appendChild(tr);
+      });
+    }
+
+    function atualizarSaldo() {
+      const totalReceitas = transacoes.filter(t => t.tipo === 'receita').reduce((acc, t) => acc + parseFloat(t.valor), 0);
+      const totalDespesas = transacoes.filter(t => t.tipo === 'despesa').reduce((acc, t) => acc + parseFloat(t.valor), 0);
+      const saldo = totalReceitas - totalDespesas;
+      saldoDiv.textContent = `Saldo: R$ ${saldo.toFixed(2)}`;
+      saldoDiv.className = 'saldo ' + (saldo >= 0 ? 'positivo' : 'negativo');
+      if (orcamentoMensal && totalDespesas > orcamentoMensal) {
+        avisoOrcamento.style.display = 'block';
+      } else {
+        avisoOrcamento.style.display = 'none';
+      }
+      atualizarGrafico(totalReceitas, totalDespesas);
+    }
+
+    function atualizarGrafico(receitas, despesas) {
+      const ctx = document.getElementById('grafico').getContext('2d');
+      if (grafico) grafico.destroy();
+      grafico = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Receitas', 'Despesas'],
+          datasets: [{
+            data: [receitas, despesas],
+            backgroundColor: ['#2ecc71', '#e74c3c'],
+          }]
+        },
+        options: {
+          plugins: {
+            legend: { display: true, position: 'bottom' }
+          }
+        }
+      });
+    }
+
+    function removerTransacao(index) {
+      transacoes.splice(index, 1);
+      atualizarTabela();
+      atualizarSaldo();
+    }
+    window.removerTransacao = removerTransacao;
+
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const descricao = document.getElementById('descricao').value.trim();
+      const valor = parseFloat(document.getElementById('valor').value);
+      const tipo = document.getElementById('tipo').value;
+      const orcamento = orcamentoInput.value ? parseFloat(orcamentoInput.value) : null;
+      if (orcamento !== null && !isNaN(orcamento)) {
+        orcamentoMensal = orcamento;
+      }
+      if (!descricao || isNaN(valor) || valor <= 0) return;
+      transacoes.push({ descricao, valor, tipo });
+      form.reset();
+      atualizarTabela();
+      atualizarSaldo();
+    });
+
+    // Inicialização
+    atualizarTabela();
+    atualizarSaldo();
+  </script>
+</body>
+</html>
